@@ -25,6 +25,14 @@ export class EmployeesService {
     return employee;
   }
 
+  async findAll() {
+    return this.prisma.employee.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, role: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   async changePasscode(dto: ChangeEmployeePasscodeDto) {
     await this.auth.verifySuperAdminPasscode(dto.superAdminPasscode);
 

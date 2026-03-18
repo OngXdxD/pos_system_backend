@@ -21,6 +21,9 @@ let EmployeesController = class EmployeesController {
     constructor(employees) {
         this.employees = employees;
     }
+    findAll() {
+        return this.employees.findAll();
+    }
     create(dto) {
         return this.employees.create(dto);
     }
@@ -29,6 +32,12 @@ let EmployeesController = class EmployeesController {
     }
 };
 exports.EmployeesController = EmployeesController;
+__decorate([
+    (0, common_1.Get)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], EmployeesController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),

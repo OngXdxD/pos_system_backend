@@ -14,6 +14,11 @@ export declare class EmployeesService {
         isActive: boolean;
         updatedAt: Date;
     }>;
+    findAll(): Promise<{
+        id: string;
+        name: string;
+        role: string;
+    }[]>;
     changePasscode(dto: ChangeEmployeePasscodeDto): Promise<{
         success: boolean;
     }>;

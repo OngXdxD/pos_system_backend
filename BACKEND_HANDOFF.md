@@ -140,3 +140,134 @@ Notes:
 - Hash passcodes and tokens server-side.
 - Add rate limiting and lockout on repeated failed login attempts.
 - Add seed super admin account with passcode `8888` during environment setup.
+
+## Additional backend endpoint needed for better UX
+
+To let super admin choose employees from a dropdown (instead of typing ID manually), please add:
+
+### `GET /api/employees`
+
+Response:
+
+```json
+[
+  { "id": "emp_001", "name": "Alice", "role": "EMPLOYEE" },
+  { "id": "emp_002", "name": "Bob", "role": "SUPER_ADMIN" }
+]
+```
+
+---
+
+## New scope: Menu Management
+
+Super admin can now create and manage a menu with items and add-on groups.
+
+### Data model
+
+```
+MenuItem
+  id            string
+  name          string
+  basePrice     number  (in cents)
+  addOnGroups   AddOnGroup[]
+
+AddOnGroup
+  id              string
+  name            string         e.g. "Extras"
+  maxSelectable   number         0 = none, 1 = pick 1, 2 = pick up to 2, etc.
+  options         AddOnOption[]
+
+AddOnOption
+  id      string
+  name    string
+  price   number  (extra charge in cents)
+```
+
+### Database tables needed (please plan if not done)
+
+1. `menu_items`
+   - `id` (PK)
+   - `name`
+   - `base_price` (integer, cents)
+   - `is_active`
+   - `created_at`, `updated_at`
+
+2. `addon_groups`
+   - `id` (PK)
+   - `menu_item_id` (FK → `menu_items.id`)
+   - `name`
+   - `max_selectable` (integer, 0 = not allowed)
+   - `sort_order`
+
+3. `addon_options`
+   - `id` (PK)
+   - `addon_group_id` (FK → `addon_groups.id`)
+   - `name`
+   - `price` (integer, cents)
+   - `sort_order`
+
+### Required API endpoints
+
+#### `GET /api/menu`
+
+Returns all active menu items with their add-on groups and options.
+
+Response:
+
+```json
+[
+  {
+    "id": "item_001",
+    "name": "Spaghetti",
+    "basePrice": 1200,
+    "addOnGroups": [
+      {
+        "id": "grp_001",
+        "name": "Extras",
+        "maxSelectable": 2,
+        "options": [
+          { "id": "opt_001", "name": "Cheese", "price": 150 },
+          { "id": "opt_002", "name": "Beef",   "price": 300 }
+        ]
+      }
+    ]
+  }
+]
+```
+
+#### `POST /api/menu`
+
+Create a new menu item (with optional add-on groups).
+
+Request:
+
+```json
+{
+  "name": "Spaghetti",
+  "basePrice": 1200,
+  "addOnGroups": [
+    {
+      "name": "Extras",
+      "maxSelectable": 2,
+      "options": [
+        { "name": "Cheese", "price": 150 },
+        { "name": "Beef",   "price": 300 }
+      ]
+    }
+  ]
+}
+```
+
+#### `PUT /api/menu/:id`
+
+Replace the full menu item (name, price, add-on groups).
+
+#### `DELETE /api/menu/:id`
+
+Soft-delete (set `is_active = false`).
+
+#### Notes
+
+- All prices are integers in cents.
+- Frontend currently persists menu locally while backend is not ready.
+- Once backend APIs are live, replace localStorage calls in `MenuManagement.tsx` with API calls.

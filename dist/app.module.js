@@ -12,6 +12,7 @@ const prisma_module_1 = require("./prisma/prisma.module");
 const auth_module_1 = require("./auth/auth.module");
 const employees_module_1 = require("./employees/employees.module");
 const time_module_1 = require("./time/time.module");
+const menu_module_1 = require("./menu/menu.module");
 const products_module_1 = require("./products/products.module");
 const orders_module_1 = require("./orders/orders.module");
 const sales_module_1 = require("./sales/sales.module");
@@ -20,7 +21,7 @@ let AppModule = class AppModule {
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
-        imports: [prisma_module_1.PrismaModule, auth_module_1.AuthModule, employees_module_1.EmployeesModule, time_module_1.TimeModule, products_module_1.ProductsModule, orders_module_1.OrdersModule, sales_module_1.SalesModule],
+        imports: [prisma_module_1.PrismaModule, auth_module_1.AuthModule, employees_module_1.EmployeesModule, time_module_1.TimeModule, menu_module_1.MenuModule, products_module_1.ProductsModule, orders_module_1.OrdersModule, sales_module_1.SalesModule],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

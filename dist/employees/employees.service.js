@@ -31,6 +31,13 @@ let EmployeesService = class EmployeesService {
         });
         return employee;
     }
+    async findAll() {
+        return this.prisma.employee.findMany({
+            where: { isActive: true },
+            select: { id: true, name: true, role: true },
+            orderBy: { name: 'asc' },
+        });
+    }
     async changePasscode(dto) {
         await this.auth.verifySuperAdminPasscode(dto.superAdminPasscode);
         const employee = await this.prisma.employee.findUnique({ where: { id: dto.employeeId } });

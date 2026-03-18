@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { ChangeEmployeePasscodeDto } from './dto/change-passcode.dto';
@@ -6,6 +6,11 @@ import { ChangeEmployeePasscodeDto } from './dto/change-passcode.dto';
 @Controller('employees')
 export class EmployeesController {
   constructor(private readonly employees: EmployeesService) {}
+
+  @Get()
+  findAll() {
+    return this.employees.findAll();
+  }
 
   @Post()
   create(@Body() dto: CreateEmployeeDto) {
