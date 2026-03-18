@@ -21,9 +21,16 @@ async function createApp() {
     return app;
 }
 async function handler(req, res) {
-    const app = await createApp();
-    const server = app.getHttpAdapter().getInstance();
-    server(req, res);
+    try {
+        const app = await createApp();
+        const server = app.getHttpAdapter().getInstance();
+        server(req, res);
+    }
+    catch (err) {
+        console.error('[Vercel] Handler crashed:', err);
+        const r = res;
+        r.status(500).json({ message: 'Internal server error', detail: String(err) });
+    }
 }
 if (!process.env.VERCEL) {
     createApp()
