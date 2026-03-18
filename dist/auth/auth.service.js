@@ -54,18 +54,21 @@ let AuthService = class AuthService {
         });
     }
     async passcodeLogin(passcode, identifier) {
+        const normalizedPasscode = String(passcode ?? '').trim();
         const lock = await this.isLockedOut(identifier);
-        if (lock.locked) {
+        if (lock.locked && process.env.NODE_ENV === 'production') {
             throw new common_1.UnauthorizedException('Too many failed attempts. Try again later.');
         }
         const employeesWithPasscodes = await this.prisma.employee.findMany({
             where: { isActive: true },
             include: { passcode: true },
         });
-        const matched = await this.findMatchingEmployee(employeesWithPasscodes, passcode);
+        console.log(`[Auth] Found ${employeesWithPasscodes.length} active employees`);
+        console.log(`[Auth] Employees with passcodes:`, employeesWithPasscodes.map(e => ({ id: e.id, name: e.name, hasPasscode: !!e.passcode })));
+        const matched = await this.findMatchingEmployee(employeesWithPasscodes, normalizedPasscode);
         if (!matched) {
             await this.recordAttempt(identifier, false);
-            throw new common_1.UnauthorizedException('Invalid passcode');
+            throw new common_1.UnauthorizedException('Invalid passcode. Ensure the database is seeded (npx prisma db seed) and employees exist.');
         }
         await this.recordAttempt(identifier, true);
         const expiresAt = new Date(Date.now() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
@@ -79,7 +82,6 @@ let AuthService = class AuthService {
         const payload = {
             sub: matched.id,
             sessionId: session.id,
-            exp: Math.floor(expiresAt.getTime() / 1000),
         };
         const token = this.jwt.sign(payload, { expiresIn: JWT_EXPIRY });
         await this.prisma.employeeSession.update({

@@ -22,6 +22,7 @@ export class AuthController {
       return await this.auth.passcodeLogin(dto.passcode, identifier);
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e;
+      console.error('[Auth] Unexpected error during passcode-login:', e);
       throw new UnauthorizedException('Invalid passcode');
     }
   }

@@ -11,12 +11,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PasscodeLoginDto = void 0;
 const class_validator_1 = require("class-validator");
+const class_transformer_1 = require("class-transformer");
 class PasscodeLoginDto {
 }
 exports.PasscodeLoginDto = PasscodeLoginDto;
 __decorate([
+    (0, class_transformer_1.Transform)(({ value }) => (value != null ? String(value) : value)),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.Matches)(/^\d{4}$/, { message: 'passcode must be a 4-digit string' }),
+    (0, class_validator_1.Matches)(/^\d{4}$/, { message: 'passcode must be 4 digits' }),
     __metadata("design:type", String)
 ], PasscodeLoginDto.prototype, "passcode", void 0);
 //# sourceMappingURL=passcode-login.dto.js.map

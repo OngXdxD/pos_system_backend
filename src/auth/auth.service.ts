@@ -50,8 +50,10 @@ export class AuthService {
   }
 
   async passcodeLogin(passcode: string, identifier: string): Promise<{ token: string; user: AuthUser }> {
+    const normalizedPasscode = String(passcode ?? '').trim();
+
     const lock = await this.isLockedOut(identifier);
-    if (lock.locked) {
+    if (lock.locked && process.env.NODE_ENV === 'production') {
       throw new UnauthorizedException(
         'Too many failed attempts. Try again later.',
       );
@@ -62,11 +64,16 @@ export class AuthService {
       include: { passcode: true },
     });
 
-    const matched = await this.findMatchingEmployee(employeesWithPasscodes, passcode);
+    console.log(`[Auth] Found ${employeesWithPasscodes.length} active employees`);
+    console.log(`[Auth] Employees with passcodes:`, employeesWithPasscodes.map(e => ({ id: e.id, name: e.name, hasPasscode: !!e.passcode })));
+
+    const matched = await this.findMatchingEmployee(employeesWithPasscodes, normalizedPasscode);
 
     if (!matched) {
       await this.recordAttempt(identifier, false);
-      throw new UnauthorizedException('Invalid passcode');
+      throw new UnauthorizedException(
+        'Invalid passcode. Ensure the database is seeded (npx prisma db seed) and employees exist.',
+      );
     }
 
     await this.recordAttempt(identifier, true);
@@ -84,7 +91,6 @@ export class AuthService {
     const payload = {
       sub: matched.id,
       sessionId: session.id,
-      exp: Math.floor(expiresAt.getTime() / 1000),
     };
     const token = this.jwt.sign(payload, { expiresIn: JWT_EXPIRY });
 

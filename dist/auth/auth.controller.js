@@ -35,6 +35,7 @@ let AuthController = class AuthController {
         catch (e) {
             if (e instanceof common_1.UnauthorizedException)
                 throw e;
+            console.error('[Auth] Unexpected error during passcode-login:', e);
             throw new common_1.UnauthorizedException('Invalid passcode');
         }
     }
