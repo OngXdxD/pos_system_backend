@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id       String   @id @default(uuid())
+  sku      String   @unique
+  name     String
+  price    Int      // smallest currency unit (e.g. cents)
+  isActive Boolean  @default(true)
+  orderItems OrderItem[]
+
+  @@map("products")
+}
+
+model Order {
+  id            String   @id @default(uuid())
+  orderNumber   String   @unique
+  createdAt     DateTime @default(now())
+  status        String   // 'PENDING_SYNC' | 'SYNCED'
+  subtotal      Int
+  tax           Int
+  total         Int
+  paymentMethod String   // 'CASH' | 'CARD' | 'OTHER'
+  items         OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  name      String  // snapshot at order time
+  unitPrice Int
+  quantity  Int
+
+  @@map("order_items")
+}
+
+// --- Auth (passcode login) ---
+
+model User {
+  id          String   @id @default(uuid())
+  displayName String
+  role        String   // CASHIER | MANAGER | ADMIN
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  passcode    UserPasscode?
+  sessions    AuthSession[]
+
+  @@map("users")
+}
+
+model UserPasscode {
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passcodeHash      String
+  passcodeUpdatedAt DateTime @default(now())
+
+  @@map("user_passcodes")
+}
+
+model AuthSession {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String
+  expiresAt  DateTime
+  revokedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@map("auth_sessions")
+}
+
+model AuthLoginAttempt {
+  id        String   @id @default(uuid())
+  identifier String  // IP or client identifier for rate/lockout
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@map("auth_login_attempts")
+}
+
+// --- Employee time tracking (clock in/out) ---
+
+model Employee {
+  id        String   @id @default(uuid())
+  name      String
+  role      String   // SUPER_ADMIN | EMPLOYEE
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  passcode   EmployeePasscode?
+  sessions   EmployeeSession[]
+  timeEntries TimeEntry[]
+
+  @@map("employees")
+}
+
+model EmployeePasscode {
+  employeeId        String   @unique
+  employee          Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  passcodeHash      String
+  passcodeUpdatedAt DateTime @default(now())
+
+  @@map("employee_passcodes")
+}
+
+model EmployeeSession {
+  id        String   @id @default(uuid())
+  employeeId String
+  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@map("employee_sessions")
+}
+
+model TimeEntry {
+  id         String    @id @default(uuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  clockInAt  DateTime
+  clockOutAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([employeeId, createdAt])
+  @@map("time_entries")
+}
