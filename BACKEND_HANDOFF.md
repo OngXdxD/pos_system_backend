@@ -158,62 +158,73 @@ Response:
 
 ---
 
-## New scope: Menu Management
+## Menu Management (now live in frontend)
 
-Super admin can now create and manage a menu with items and add-on groups.
+Super admin can create, edit, and delete menu items with add-on groups and options.
+Frontend calls real backend APIs. Changes are also cached in localStorage as offline fallback.
 
-### Data model
+---
 
+### Confirmed TypeScript types (frontend)
+
+```ts
+interface MenuItem {
+  id: string
+  name: string
+  basePrice: number      // in cents, e.g. 1200 = $12.00
+  addOnGroups: AddOnGroup[]
+}
+
+interface AddOnGroup {
+  id: string
+  name: string           // e.g. "Extras"
+  maxSelectable: number  // 0 = none, 1 = pick 1, 2 = pick up to 2, etc.
+  options: AddOnOption[]
+}
+
+interface AddOnOption {
+  id: string
+  name: string
+  price: number          // extra charge in cents
+}
 ```
-MenuItem
-  id            string
-  name          string
-  basePrice     number  (in cents)
-  addOnGroups   AddOnGroup[]
 
-AddOnGroup
-  id              string
-  name            string         e.g. "Extras"
-  maxSelectable   number         0 = none, 1 = pick 1, 2 = pick up to 2, etc.
-  options         AddOnOption[]
+---
 
-AddOnOption
-  id      string
-  name    string
-  price   number  (extra charge in cents)
-```
-
-### Database tables needed (please plan if not done)
+### Database tables (please confirm these are planned)
 
 1. `menu_items`
    - `id` (PK)
    - `name`
    - `base_price` (integer, cents)
-   - `is_active`
+   - `is_active` (boolean, default true)
    - `created_at`, `updated_at`
 
 2. `addon_groups`
    - `id` (PK)
-   - `menu_item_id` (FK → `menu_items.id`)
+   - `menu_item_id` (FK → `menu_items.id`, CASCADE DELETE)
    - `name`
    - `max_selectable` (integer, 0 = not allowed)
-   - `sort_order`
+   - `sort_order` (integer, optional, for ordering)
 
 3. `addon_options`
    - `id` (PK)
-   - `addon_group_id` (FK → `addon_groups.id`)
+   - `addon_group_id` (FK → `addon_groups.id`, CASCADE DELETE)
    - `name`
    - `price` (integer, cents)
-   - `sort_order`
+   - `sort_order` (integer, optional)
 
-### Required API endpoints
+---
+
+### API endpoints (confirmed from backend team)
+
+All endpoints require `Authorization: Bearer <token>` header.
 
 #### `GET /api/menu`
 
-Returns all active menu items with their add-on groups and options.
+Returns all active items with full nested add-on groups and options.
 
-Response:
-
+Response `200`:
 ```json
 [
   {
@@ -235,12 +246,18 @@ Response:
 ]
 ```
 
+#### `GET /api/menu/:id`
+
+Returns a single menu item by ID.
+
+Response `200`: same shape as one element from GET /api/menu.
+Response `404`: `{ "message": "Not found" }`
+
 #### `POST /api/menu`
 
-Create a new menu item (with optional add-on groups).
+Creates a new item. `addOnGroups` is optional (can be empty array or omitted).
 
-Request:
-
+Request body:
 ```json
 {
   "name": "Spaghetti",
@@ -258,16 +275,47 @@ Request:
 }
 ```
 
+Response `201` (or `200`): full `MenuItem` with server-assigned IDs for item, groups, and options.
+
+**Important**: the frontend uses the `id` in the response to track the item. It must be present.
+
 #### `PUT /api/menu/:id`
 
-Replace the full menu item (name, price, add-on groups).
+Replaces the entire item — name, price, and all add-on groups.
+Backend should delete existing add-on groups/options for this item and re-create from request.
+
+Request body (same shape as POST, `id` field in body can be ignored by backend):
+```json
+{
+  "name": "Spaghetti Bolognese",
+  "basePrice": 1400,
+  "addOnGroups": [
+    {
+      "id": "grp_001",
+      "name": "Extras",
+      "maxSelectable": 1,
+      "options": [
+        { "id": "opt_001", "name": "Cheese", "price": 200 }
+      ]
+    }
+  ]
+}
+```
+
+Response `200`: updated full `MenuItem` with refreshed IDs.
 
 #### `DELETE /api/menu/:id`
 
-Soft-delete (set `is_active = false`).
+Soft-delete: set `is_active = false`. Item will no longer appear in `GET /api/menu`.
 
-#### Notes
+Response `200` or `204`.
 
-- All prices are integers in cents.
-- Frontend currently persists menu locally while backend is not ready.
-- Once backend APIs are live, replace localStorage calls in `MenuManagement.tsx` with API calls.
+---
+
+### Implementation notes
+
+- All prices are **integers in cents**. $12.00 = `1200`. Never use floats.
+- Frontend divides by 100 for display only.
+- The `PUT` endpoint must return the **updated full item** (including all add-on groups with their new IDs), so the frontend can sync its state.
+- If `GET /api/menu` fails, frontend falls back to locally cached data (localStorage).
+- Deleted items removed locally regardless of whether the API call succeeds.
