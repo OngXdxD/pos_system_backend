@@ -1,31 +1,13 @@
 {
-  "version": 2,
-  "buildCommand": "npm run build",
-  "builds": [
-    {
-      "src": "dist/main.js",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": [
-          "node_modules/.prisma/client/**",
-          "node_modules/@prisma/engines/**"
-        ]
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/dist/main.js"
-    }
-  ],
+  "buildCommand": "npx prisma generate && nest build",
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,PATCH,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization, Accept" }
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization, Accept" },
+        { "key": "Access-Control-Allow-Credentials", "value": "true" }
       ]
     }
   ]
