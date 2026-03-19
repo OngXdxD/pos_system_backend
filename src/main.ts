@@ -7,7 +7,11 @@ let cachedApp: INestApplication;
 async function createApp(): Promise<INestApplication> {
   if (cachedApp) return cachedApp;
   const app = await NestFactory.create(AppModule);
-  app.enableCors({ origin: true });
+  // On Vercel, CORS is handled at the edge via vercel.json to avoid duplicate headers.
+  // Locally, NestJS handles it.
+  if (!process.env.VERCEL) {
+    app.enableCors({ origin: true });
+  }
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({

@@ -16,6 +16,27 @@
   "routes": [
     {
       "src": "/(.*)",
+      "methods": ["OPTIONS"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Requested-With",
+        "Access-Control-Max-Age": "86400"
+      },
+      "status": 204,
+      "dest": "dist/main.js"
+    },
+    {
+      "src": "/(.*)",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Requested-With"
+      },
+      "continue": true
+    },
+    {
+      "src": "/(.*)",
       "dest": "dist/main.js"
     }
   ]
