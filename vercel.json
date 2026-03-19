@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx prisma generate && nest build",
+  "buildCommand": "npx prisma generate && npx nest build",
   "headers": [
     {
       "source": "/(.*)",
