@@ -1,321 +1,128 @@
-# Backend Handoff: Clock In/Clock Out System
+# Backend handoff — current tasks
 
-Frontend requirements changed to employee time tracking.
-
-## New backend scope required
-
-1. 4-digit passcode login for employee and super admin.
-2. Employee clock in / clock out records.
-3. Employee creation with custom passcode.
-4. Employee passcode change flow that requires super admin password.
-5. Super admin default passcode in seed data: `8888`.
-
-## Required APIs
-
-### `POST /api/auth/passcode-login`
-
-Request:
-
-```json
-{
-  "passcode": "1234"
-}
-```
-
-Success response:
-
-```json
-{
-  "token": "session-token",
-  "user": {
-    "id": "emp_001",
-    "name": "Alice",
-    "role": "EMPLOYEE"
-  }
-}
-```
-
-### `POST /api/time/clock-in`
-
-Request:
-
-```json
-{
-  "employeeId": "emp_001"
-}
-```
-
-Success response:
-
-```json
-{
-  "id": "entry_001",
-  "employeeId": "emp_001",
-  "clockInAt": "2026-03-18T10:00:00.000Z",
-  "clockOutAt": null
-}
-```
-
-### `POST /api/time/clock-out`
-
-Request:
-
-```json
-{
-  "entryId": "entry_001"
-}
-```
-
-Success response:
-
-```json
-{
-  "id": "entry_001",
-  "employeeId": "emp_001",
-  "clockInAt": "2026-03-18T10:00:00.000Z",
-  "clockOutAt": "2026-03-18T18:00:00.000Z"
-}
-```
-
-### `GET /api/time/entries?employeeId=emp_001`
-
-Return recent entries for dashboard display.
-
-### `POST /api/employees`
-
-Request:
-
-```json
-{
-  "name": "Bob",
-  "passcode": "2468",
-  "role": "EMPLOYEE"
-}
-```
-
-### `POST /api/employees/change-passcode`
-
-Request:
-
-```json
-{
-  "employeeId": "emp_001",
-  "newPasscode": "1357",
-  "superAdminPasscode": "8888"
-}
-```
-
-Notes:
-- Validate super admin passcode before allowing passcode update.
-- Return `403` if super admin passcode is wrong.
-
-## Database planning request (please do if not done)
-
-1. `employees`
-   - `id` (PK)
-   - `name`
-   - `role` (`SUPER_ADMIN` / `EMPLOYEE`)
-   - `is_active`
-   - `created_at`, `updated_at`
-2. `employee_passcodes`
-   - `employee_id` (FK)
-   - `passcode_hash`
-   - `passcode_updated_at`
-3. `time_entries`
-   - `id` (PK)
-   - `employee_id` (FK)
-   - `clock_in_at`
-   - `clock_out_at` (nullable)
-   - `created_at`
-4. `auth_sessions`
-   - `id` (PK)
-   - `employee_id` (FK)
-   - `token_hash`
-   - `expires_at`
-   - `revoked_at` (nullable)
-
-## Security requirements
-
-- Never store raw passcodes.
-- Hash passcodes and tokens server-side.
-- Add rate limiting and lockout on repeated failed login attempts.
-- Add seed super admin account with passcode `8888` during environment setup.
-
-## Additional backend endpoint needed for better UX
-
-To let super admin choose employees from a dropdown (instead of typing ID manually), please add:
-
-### `GET /api/employees`
-
-Response:
-
-```json
-[
-  { "id": "emp_001", "name": "Alice", "role": "EMPLOYEE" },
-  { "id": "emp_002", "name": "Bob", "role": "SUPER_ADMIN" }
-]
-```
+What the frontend expects the API to implement or align with. Older features (auth, time, menu, company) are assumed unless noted.
 
 ---
 
-## Menu Management (now live in frontend)
+## 1. Human-readable order number (not raw UUID)
 
-Super admin can create, edit, and delete menu items with add-on groups and options.
-Frontend calls real backend APIs. Changes are also cached in localStorage as offline fallback.
+Customers and kitchen should see codes like **`C001`**, **`C002`**, not the internal UUID.
 
----
+**Option A (preferred):** Return a string on every order:
 
-### Confirmed TypeScript types (frontend)
+- `orderNumber`: `"C001"` (or your format)
 
-```ts
-interface MenuItem {
-  id: string
-  name: string
-  basePrice: number      // in cents, e.g. 1200 = $12.00
-  addOnGroups: AddOnGroup[]
-}
+**Option B:** Return an increment:
 
-interface AddOnGroup {
-  id: string
-  name: string           // e.g. "Extras"
-  maxSelectable: number  // 0 = none, 1 = pick 1, 2 = pick up to 2, etc.
-  options: AddOnOption[]
-}
+- `sequence`: `1` — frontend displays as `C001` via zero-padding.
 
-interface AddOnOption {
-  id: string
-  name: string
-  price: number          // extra charge in cents
-}
-```
+If neither is present, the UI falls back to a short code derived from the UUID (still not the full GUID).
+
+Apply on **`POST /api/orders`** response and **`GET /api/orders`** (and **`GET /api/orders/:id`** if you add it).
 
 ---
 
-### Database tables (please confirm these are planned)
+## 2. `POST /api/orders` — cash tender & change
 
-1. `menu_items`
-   - `id` (PK)
-   - `name`
-   - `base_price` (integer, cents)
-   - `is_active` (boolean, default true)
-   - `created_at`, `updated_at`
+When `paymentMethod` is cash (e.g. `CASH`), the body may include:
 
-2. `addon_groups`
-   - `id` (PK)
-   - `menu_item_id` (FK → `menu_items.id`, CASCADE DELETE)
-   - `name`
-   - `max_selectable` (integer, 0 = not allowed)
-   - `sort_order` (integer, optional, for ordering)
+| Field | Type | Notes |
+|-------|------|--------|
+| `tenderCents` | number | Amount the customer paid (cents). |
 
-3. `addon_options`
-   - `id` (PK)
-   - `addon_group_id` (FK → `addon_groups.id`, CASCADE DELETE)
-   - `name`
-   - `price` (integer, cents)
-   - `sort_order` (integer, optional)
+**Response should include** (for receipts and history):
+
+- `tenderCents` — echo or stored value  
+- `changeDueCents` — `max(0, tenderCents - totalCents)` (or equivalent after your pricing rules)
+
+Non-cash orders: omit `tenderCents` or send `null`.
 
 ---
 
-### API endpoints (confirmed from backend team)
+## 3. `POST /api/orders` — existing fields (recap)
 
-All endpoints require `Authorization: Bearer <token>` header.
+- `employeeId`, `lines[]`, optional `discountCents` (apply **before** payment in the UI), then `paymentMethod`, and for cash optional `tenderCents`
+- Validate lines, compute **`totalCents`** server-side (including discount)
+- Return full order with **`orderNumber`** / **`sequence`**, **`status`**, lines, etc.
 
-#### `GET /api/menu`
+---
 
-Returns all active items with full nested add-on groups and options.
+## 4. Order history & `GET /api/orders`
 
-Response `200`:
+- List orders (newest first). Support `?status=` and `?employeeId=` if useful.
+- Include **`orderNumber`** / **`sequence`**, **`paymentMethod`**, **`discountCents`**, **`tenderCents`**, **`changeDueCents`** when applicable.
+- Add status **`REFUNDED`** when an order is refunded.
+
+---
+
+## 5. `GET /api/orders/:id` (optional)
+
+Return a single order (same shape as list item). Used if you want detail views later; the frontend currently uses list data for reprints.
+
+---
+
+## 6. `POST /api/orders/:id/refund`
+
+Authorize a **refund** using **any active employee’s passcode** (not necessarily the logged-in session user).
+
+**Body:**
+
 ```json
-[
-  {
-    "id": "item_001",
-    "name": "Spaghetti",
-    "basePrice": 1200,
-    "addOnGroups": [
-      {
-        "id": "grp_001",
-        "name": "Extras",
-        "maxSelectable": 2,
-        "options": [
-          { "id": "opt_001", "name": "Cheese", "price": 150 },
-          { "id": "opt_002", "name": "Beef",   "price": 300 }
-        ]
-      }
-    ]
-  }
-]
+{ "employeePasscode": "1234" }
 ```
 
-#### `GET /api/menu/:id`
+**Behavior:**
 
-Returns a single menu item by ID.
+1. Resolve employee by passcode (same validation as login / bcrypt).
+2. If invalid → `401` or `403`.
+3. Mark order refunded (e.g. `status: "REFUNDED"`) and persist payment reversal per your rules.
+4. **Audit log (required):** record at least `orderId`, `action: "REFUND"`, **`actorEmployeeId`** / name of the employee whose passcode was verified, and timestamp.
+5. Return updated **order** JSON.
 
-Response `200`: same shape as one element from GET /api/menu.
-Response `404`: `{ "message": "Not found" }`
+---
 
-#### `POST /api/menu`
+## 7. `POST /api/orders/:id/payment-method`
 
-Creates a new item. `addOnGroups` is optional (can be empty array or omitted).
+Change payment method after the sale, again with **any** employee passcode.
 
-Request body:
+**Body:**
+
 ```json
 {
-  "name": "Spaghetti",
-  "basePrice": 1200,
-  "addOnGroups": [
-    {
-      "name": "Extras",
-      "maxSelectable": 2,
-      "options": [
-        { "name": "Cheese", "price": 150 },
-        { "name": "Beef",   "price": 300 }
-      ]
-    }
-  ]
+  "employeePasscode": "1234",
+  "paymentMethod": "CARD"
 }
 ```
 
-Response `201` (or `200`): full `MenuItem` with server-assigned IDs for item, groups, and options.
+**Behavior:**
 
-**Important**: the frontend uses the `id` in the response to track the item. It must be present.
-
-#### `PUT /api/menu/:id`
-
-Replaces the entire item — name, price, and all add-on groups.
-Backend should delete existing add-on groups/options for this item and re-create from request.
-
-Request body (same shape as POST, `id` field in body can be ignored by backend):
-```json
-{
-  "name": "Spaghetti Bolognese",
-  "basePrice": 1400,
-  "addOnGroups": [
-    {
-      "id": "grp_001",
-      "name": "Extras",
-      "maxSelectable": 1,
-      "options": [
-        { "id": "opt_001", "name": "Cheese", "price": 200 }
-      ]
-    }
-  ]
-}
-```
-
-Response `200`: updated full `MenuItem` with refreshed IDs.
-
-#### `DELETE /api/menu/:id`
-
-Soft-delete: set `is_active = false`. Item will no longer appear in `GET /api/menu`.
-
-Response `200` or `204`.
+1. Verify passcode → employee actor.
+2. Reject if order is **`REFUNDED`** or **`CANCELLED`** (match frontend).
+3. Update stored `paymentMethod`.
+4. **Audit log:** `orderId`, `action: "CHANGE_PAYMENT"`, **`actorEmployeeId`**, old/new method, timestamp.
+5. Return updated **order**.
 
 ---
 
-### Implementation notes
+## 8. Audit trail (recommended schema)
 
-- All prices are **integers in cents**. $12.00 = `1200`. Never use floats.
-- Frontend divides by 100 for display only.
-- The `PUT` endpoint must return the **updated full item** (including all add-on groups with their new IDs), so the frontend can sync its state.
-- If `GET /api/menu` fails, frontend falls back to locally cached data (localStorage).
-- Deleted items removed locally regardless of whether the API call succeeds.
+Example table `order_audit_events`:
+
+- `id`, `order_id`, `action` (`REFUND` | `CHANGE_PAYMENT` | …)
+- `actor_employee_id` (who passed passcode verification)
+- `payload` (JSON: optional details)
+- `created_at`
+
+Optional **`GET /api/orders/:id/audit`** for admin UI later.
+
+---
+
+## 9. Printing
+
+Still **client-only** (`window.print()`). No print API required.
+
+---
+
+## 10. Optional: `GET/PUT /api/payment-methods`
+
+If payment methods should be server-driven instead of localStorage-only, expose CRUD for Super Admin; codes must match `paymentMethod` validation on orders.

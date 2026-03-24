@@ -19,6 +19,11 @@ export class CreateAddOnGroupDto {
   @IsString()
   name!: string;
 
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  minSelectable?: number;
+
   @IsInt()
   @Min(0)
   maxSelectable!: number;

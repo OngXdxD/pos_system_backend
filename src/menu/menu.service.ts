@@ -4,7 +4,7 @@ import { CreateMenuItemDto, CreateAddOnGroupDto } from './dto/create-menu-item.d
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 
 type AddOnOptionRow = { id: string; name: string; price: number; sortOrder: number };
-type AddOnGroupRow = { id: string; name: string; maxSelectable: number; sortOrder: number; options: AddOnOptionRow[] };
+type AddOnGroupRow = { id: string; name: string; minSelectable: number; maxSelectable: number; sortOrder: number; options: AddOnOptionRow[] };
 type MenuItemRow = { id: string; name: string; basePrice: number; isActive: boolean; addOnGroups: AddOnGroupRow[] };
 
 const menuInclude = {
@@ -25,6 +25,7 @@ function toDto(item: MenuItemRow) {
     addOnGroups: item.addOnGroups.map((g) => ({
       id: g.id,
       name: g.name,
+      minSelectable: g.minSelectable,
       maxSelectable: g.maxSelectable,
       sortOrder: g.sortOrder,
       options: g.options.map((o) => ({
@@ -40,6 +41,7 @@ function toDto(item: MenuItemRow) {
 function buildGroupsCreate(groups: CreateAddOnGroupDto[]) {
   return groups.map((g, gi) => ({
     name: g.name,
+    minSelectable: g.minSelectable ?? 0,
     maxSelectable: g.maxSelectable,
     sortOrder: g.sortOrder ?? gi,
     options: {
