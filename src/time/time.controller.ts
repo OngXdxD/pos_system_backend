@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Query } from '@nestjs/common';
 import { TimeService } from './time.service';
 import { ClockInDto } from './dto/clock-in.dto';
 import { ClockOutDto } from './dto/clock-out.dto';
@@ -18,8 +18,11 @@ export class TimeController {
   }
 
   @Get('entries')
-  entries(@Query('employeeId') employeeId: string) {
-    return this.time.listEntries(employeeId);
+  entries(
+    @Headers('authorization') authorization: string | undefined,
+    @Query('employeeId') employeeId?: string,
+  ) {
+    return this.time.listEntries(authorization, employeeId);
   }
 }
 

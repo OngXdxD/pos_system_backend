@@ -6,8 +6,18 @@ import { TimeModule } from './time/time.module';
 import { MenuModule } from './menu/menu.module';
 import { CompanyModule } from './company/company.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, EmployeesModule, TimeModule, MenuModule, CompanyModule, OrdersModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    EmployeesModule,
+    TimeModule,
+    MenuModule,
+    CompanyModule,
+    OrdersModule,
+    PaymentMethodsModule,
+  ],
 })
 export class AppModule {}

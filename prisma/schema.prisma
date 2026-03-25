@@ -44,6 +44,7 @@ model EmployeeSession {
   revokedAt DateTime?
   createdAt DateTime @default(now())
 
+  @@index([employeeId])
   @@map("employee_sessions")
 }
 
@@ -56,6 +57,8 @@ model TimeEntry {
   createdAt  DateTime  @default(now())
 
   @@index([employeeId, createdAt])
+  @@index([employeeId, clockInAt])
+  @@index([clockInAt])
   @@map("time_entries")
 }
 
@@ -70,6 +73,7 @@ model MenuItem {
   updatedAt   DateTime    @updatedAt
   addOnGroups AddOnGroup[]
 
+  @@index([isActive, name])
   @@map("menu_items")
 }
 
@@ -83,6 +87,7 @@ model AddOnGroup {
   sortOrder     Int          @default(0)
   options       AddOnOption[]
 
+  @@index([menuItemId])
   @@map("addon_groups")
 }
 
@@ -94,7 +99,22 @@ model AddOnOption {
   price       Int        @default(0)
   sortOrder   Int        @default(0)
 
+  @@index([addOnGroupId])
   @@map("addon_options")
+}
+
+// --- Payment method catalog (Super Admin configurable) ---
+
+model PaymentMethod {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@map("payment_methods")
 }
 
 // --- Company settings (single row) ---
@@ -114,22 +134,26 @@ model CompanySetting {
 // --- Orders ---
 
 model Order {
-  id              String            @id @default(uuid())
-  sequence        Int               @unique @default(autoincrement())
-  employeeId      String
-  employee        Employee          @relation(fields: [employeeId], references: [id])
-  subtotalCents   Int               // sum of lines before discount
-  discountCents   Int               @default(0)
-  totalCents      Int               // max(0, subtotalCents - discountCents)
-  paymentMethod   String            // CASH | CARD | OTHER
-  tenderCents     Int?              // cash tender amount (cents)
-  changeDueCents  Int?              // max(0, tenderCents - totalCents) for cash
-  status          String            @default("PENDING") // PENDING | COMPLETED | CANCELLED | REFUNDED
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  lines           OrderLine[]
-  auditEvents     OrderAuditEvent[]
+  id                    String            @id @default(uuid())
+  sequence              Int               @unique @default(autoincrement())
+  employeeId            String
+  employee              Employee          @relation(fields: [employeeId], references: [id])
+  subtotalCents         Int               // sum of lines before discount
+  discountCents         Int               @default(0)
+  totalCents            Int               // max(0, subtotalCents - discountCents)
+  paymentMethod         String            // catalog code: CASH | CARD | OTHER | …
+  paymentMethodDetail   String?           // sub-method code when OTHER (e.g. TNG)
+  tenderCents           Int?              // cash tender amount (cents)
+  changeDueCents        Int?              // max(0, tenderCents - totalCents) for cash
+  status                String            @default("PENDING") // PENDING | COMPLETED | CANCELLED | REFUNDED
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  lines                 OrderLine[]
+  auditEvents           OrderAuditEvent[]
 
+  @@index([createdAt])
+  @@index([createdAt, status])
+  @@index([employeeId])
   @@map("orders")
 }
 
@@ -156,6 +180,7 @@ model OrderLine {
   quantity     Int
   addOns       OrderLineAddon[]
 
+  @@index([orderId])
   @@map("order_lines")
 }
 
@@ -167,5 +192,6 @@ model OrderLineAddon {
   optionName  String
   price       Int
 
+  @@index([orderLineId])
   @@map("order_line_addons")
 }

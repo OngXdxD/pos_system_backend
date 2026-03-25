@@ -33,6 +33,15 @@ export class EmployeesService {
     });
   }
 
+  /** Staff directory: Super Admin sees everyone; other roles see themselves only (§4a). */
+  async findAllForViewer(authorizationHeader: string | undefined) {
+    const viewer = await this.auth.authenticateBearer(authorizationHeader);
+    if (viewer.role === 'SUPER_ADMIN') {
+      return this.findAll();
+    }
+    return [{ id: viewer.id, name: viewer.name, role: viewer.role }];
+  }
+
   async changePasscode(dto: ChangeEmployeePasscodeDto) {
     await this.auth.verifySuperAdminPasscode(dto.superAdminPasscode);
 

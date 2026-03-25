@@ -1,6 +1,5 @@
-import { IsString, Matches, IsIn } from 'class-validator';
+import { IsString, Matches, MaxLength, IsOptional } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { ORDER_PAYMENT_METHODS } from '../order-payment.constants';
 
 export class ChangeOrderPaymentDto {
   @Transform(({ value }) => (value != null ? String(value) : value))
@@ -9,6 +8,13 @@ export class ChangeOrderPaymentDto {
   employeePasscode!: string;
 
   @IsString()
-  @IsIn([...ORDER_PAYMENT_METHODS])
-  paymentMethod!: (typeof ORDER_PAYMENT_METHODS)[number];
+  @MaxLength(32)
+  @Matches(/^[A-Z][A-Z0-9_]*$/, { message: 'paymentMethod must match server catalog code' })
+  paymentMethod!: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === null || value === undefined ? undefined : String(value)))
+  @IsString()
+  @MaxLength(64)
+  paymentMethodDetail?: string;
 }

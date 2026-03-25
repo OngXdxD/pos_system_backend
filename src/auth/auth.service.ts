@@ -25,6 +25,53 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  /**
+   * Validates `Authorization: Bearer <jwt>` and active session. Used for staff directory & timesheet APIs.
+   */
+  async authenticateBearer(authorizationHeader: string | undefined): Promise<AuthUser> {
+    const raw = authorizationHeader?.trim();
+    if (!raw?.toLowerCase().startsWith('bearer ')) {
+      throw new UnauthorizedException('Missing or invalid Authorization header');
+    }
+    const token = raw.slice(7).trim();
+    if (!token) throw new UnauthorizedException('Missing token');
+
+    let payload: { sub: string; sessionId: string };
+    try {
+      payload = this.jwt.verify<{ sub: string; sessionId: string }>(token);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    const session = await this.prisma.employeeSession.findUnique({
+      where: { id: payload.sessionId },
+      select: {
+        tokenHash: true,
+        expiresAt: true,
+        revokedAt: true,
+        employee: { select: { id: true, name: true, role: true, isActive: true } },
+      },
+    });
+    if (!session || session.revokedAt || session.expiresAt < new Date()) {
+      throw new UnauthorizedException('Session invalid or expired');
+    }
+    if (session.tokenHash !== this.hashToken(token)) {
+      throw new UnauthorizedException('Session invalid');
+    }
+    if (!session.employee.isActive) {
+      throw new UnauthorizedException('Employee inactive');
+    }
+    if (session.employee.id !== payload.sub) {
+      throw new UnauthorizedException('Session invalid');
+    }
+
+    return {
+      id: session.employee.id,
+      name: session.employee.name,
+      role: session.employee.role,
+    };
+  }
+
   private isLockedOut(identifier: string): { locked: boolean; retryAfterMs?: number } {
     const now = Date.now();
     const cutoff = now - LOCKOUT_WINDOW_MS;
@@ -56,7 +103,12 @@ export class AuthService {
 
     const employeesWithPasscodes = await this.prisma.employee.findMany({
       where: { isActive: true },
-      include: { passcode: true },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        passcode: { select: { passcodeHash: true } },
+      },
     });
 
     const matched = await this.findMatchingEmployee(employeesWithPasscodes, normalizedPasscode);
@@ -101,7 +153,12 @@ export class AuthService {
   async verifySuperAdminPasscode(passcode: string): Promise<void> {
     const superAdmins = await this.prisma.employee.findMany({
       where: { isActive: true, role: 'SUPER_ADMIN' },
-      include: { passcode: true },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        passcode: { select: { passcodeHash: true } },
+      },
     });
     const matched = await this.findMatchingEmployee(superAdmins, passcode);
     if (!matched) throw new ForbiddenException('Invalid super admin passcode');
@@ -112,7 +169,12 @@ export class AuthService {
     const normalized = String(passcode ?? '').trim();
     const employees = await this.prisma.employee.findMany({
       where: { isActive: true },
-      include: { passcode: true },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        passcode: { select: { passcodeHash: true } },
+      },
     });
     const matched = await this.findMatchingEmployee(employees, normalized);
     if (!matched) throw new UnauthorizedException('Invalid passcode');

@@ -88,7 +88,11 @@ export class MenuService {
   }
 
   async replace(id: string, dto: UpdateMenuItemDto) {
-    await this.findOne(id);
+    const exists = await this.prisma.menuItem.findFirst({
+      where: { id, isActive: true },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException(`Menu item ${id} not found`);
 
     // Delete existing groups (cascades to options) then recreate from payload
     await this.prisma.addOnGroup.deleteMany({ where: { menuItemId: id } });
@@ -108,8 +112,11 @@ export class MenuService {
   }
 
   async softDelete(id: string) {
-    await this.findOne(id);
-    await this.prisma.menuItem.update({ where: { id }, data: { isActive: false } });
+    const res = await this.prisma.menuItem.updateMany({
+      where: { id, isActive: true },
+      data: { isActive: false },
+    });
+    if (res.count === 0) throw new NotFoundException(`Menu item ${id} not found`);
     return { success: true };
   }
 }

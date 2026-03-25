@@ -9,8 +9,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ChangeOrderPaymentDto } from './dto/change-order-payment.dto';
+import { ensureDefaultPaymentMethods } from '../payment-methods/ensure-default-payment-methods';
 
 const orderInclude = {
+  employee: { select: { name: true } },
   lines: {
     include: { addOns: true },
   },
@@ -29,10 +31,12 @@ type OrderRow = {
   id: string;
   sequence: number;
   employeeId: string;
+  employee?: { name: string } | null;
   subtotalCents: number;
   discountCents: number;
   totalCents: number;
   paymentMethod: string;
+  paymentMethodDetail: string | null;
   tenderCents: number | null;
   changeDueCents: number | null;
   status: string;
@@ -66,10 +70,12 @@ function toDto(o: OrderRow) {
     sequence: o.sequence,
     orderNumber: formatOrderNumber(o.sequence),
     employeeId: o.employeeId,
+    employeeName: o.employee?.name ?? null,
     subtotalCents: o.subtotalCents,
     discountCents: o.discountCents,
     totalCents: o.totalCents,
     paymentMethod: o.paymentMethod,
+    paymentMethodDetail: o.paymentMethodDetail ?? null,
     tenderCents: o.tenderCents,
     changeDueCents: o.changeDueCents,
     status: o.status,
@@ -86,20 +92,42 @@ export class OrdersService {
     private readonly auth: AuthService,
   ) {}
 
+  private async assertPaymentMethodInCatalog(code: string): Promise<void> {
+    await ensureDefaultPaymentMethods(this.prisma);
+    const row = await this.prisma.paymentMethod.findUnique({
+      where: { code },
+      select: { code: true },
+    });
+    if (!row) throw new BadRequestException(`Unknown payment method: ${code}`);
+  }
+
   async create(dto: CreateOrderDto) {
     if (!dto.lines.length) throw new BadRequestException('Order must have at least one line');
+
+    await this.assertPaymentMethodInCatalog(dto.paymentMethod);
+
+    const detailTrimmed = dto.paymentMethodDetail?.trim();
+    if (dto.paymentMethod !== 'OTHER' && detailTrimmed) {
+      throw new BadRequestException('paymentMethodDetail may only be set when paymentMethod is OTHER');
+    }
+    const paymentMethodDetail = dto.paymentMethod === 'OTHER' ? (detailTrimmed || null) : null;
 
     if (dto.paymentMethod !== 'CASH' && dto.tenderCents != null) {
       throw new BadRequestException('tenderCents is only valid when paymentMethod is CASH');
     }
 
-    const employee = await this.prisma.employee.findUnique({ where: { id: dto.employeeId } });
-    if (!employee || !employee.isActive) throw new NotFoundException('Employee not found');
-
     const menuItemIds = [...new Set(dto.lines.map((l) => l.menuItemId))];
-    const menuItems = await this.prisma.menuItem.findMany({
-      where: { id: { in: menuItemIds }, isActive: true },
-    });
+    const [employee, menuItems] = await Promise.all([
+      this.prisma.employee.findUnique({
+        where: { id: dto.employeeId },
+        select: { id: true, isActive: true },
+      }),
+      this.prisma.menuItem.findMany({
+        where: { id: { in: menuItemIds }, isActive: true },
+        select: { id: true },
+      }),
+    ]);
+    if (!employee || !employee.isActive) throw new NotFoundException('Employee not found');
     const menuMap = new Map(menuItems.map((m) => [m.id, m]));
     for (const id of menuItemIds) {
       if (!menuMap.has(id)) throw new BadRequestException(`Menu item ${id} not found or inactive`);
@@ -123,6 +151,8 @@ export class OrdersService {
       changeDueCents = Math.max(0, tenderCents - totalCents);
     }
 
+    const status = dto.autoCompleteNewOrders === true ? 'COMPLETED' : 'PENDING';
+
     const order = await this.prisma.order.create({
       data: {
         employeeId: dto.employeeId,
@@ -130,9 +160,10 @@ export class OrdersService {
         discountCents,
         totalCents,
         paymentMethod: dto.paymentMethod,
+        paymentMethodDetail,
         tenderCents,
         changeDueCents,
-        status: 'PENDING',
+        status,
         lines: {
           create: dto.lines.map((line) => ({
             menuItemId: line.menuItemId,
@@ -155,15 +186,46 @@ export class OrdersService {
     return toDto(order as OrderRow);
   }
 
-  async findAll(status?: string, employeeId?: string) {
-    const where: Record<string, unknown> = {};
+  /** @param limitStr Optional `limit` query (1..5000) to cap rows returned for large datasets. */
+  async findAll(status?: string, employeeId?: string, fromIso?: string, toIso?: string, limitStr?: string) {
+    const where: Prisma.OrderWhereInput = {};
     if (status) where.status = status;
     if (employeeId) where.employeeId = employeeId;
+
+    if (fromIso || toIso) {
+      const createdAt: Prisma.DateTimeFilter = {};
+      if (fromIso) {
+        const from = new Date(fromIso);
+        if (Number.isNaN(from.getTime())) {
+          throw new BadRequestException('Invalid from (expected ISO-8601 datetime)');
+        }
+        createdAt.gte = from;
+      }
+      if (toIso) {
+        const to = new Date(toIso);
+        if (Number.isNaN(to.getTime())) {
+          throw new BadRequestException('Invalid to (expected ISO-8601 datetime)');
+        }
+        createdAt.lte = to;
+      }
+      where.createdAt = createdAt;
+    }
+
+    const ORDERS_MAX_LIMIT = 5000;
+    let take: number | undefined;
+    if (limitStr !== undefined && limitStr !== '') {
+      const n = parseInt(limitStr, 10);
+      if (!Number.isFinite(n) || n < 1) {
+        throw new BadRequestException('limit must be a positive integer');
+      }
+      take = Math.min(n, ORDERS_MAX_LIMIT);
+    }
 
     const orders = await this.prisma.order.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: orderInclude,
+      ...(take !== undefined ? { take } : {}),
     });
     return orders.map((o) => toDto(o as OrderRow));
   }
@@ -183,11 +245,21 @@ export class OrdersService {
       where: { orderId: id },
       orderBy: { createdAt: 'asc' },
     });
+    const actorIds = [...new Set(events.map((e) => e.actorEmployeeId))];
+    const actors =
+      actorIds.length === 0
+        ? []
+        : await this.prisma.employee.findMany({
+            where: { id: { in: actorIds } },
+            select: { id: true, name: true },
+          });
+    const nameById = new Map(actors.map((a) => [a.id, a.name]));
     return events.map((e) => ({
       id: e.id,
       orderId: e.orderId,
       action: e.action,
       actorEmployeeId: e.actorEmployeeId,
+      actorName: nameById.get(e.actorEmployeeId) ?? null,
       payload: e.payload,
       createdAt: e.createdAt.toISOString(),
     }));
@@ -210,7 +282,10 @@ export class OrdersService {
         orderId: id,
         action: 'REFUND',
         actorEmployeeId: actor.id,
-        payload: { previousStatus: order.status } as Prisma.InputJsonValue,
+        payload: {
+          previousStatus: order.status,
+          actorName: actor.name,
+        } as Prisma.InputJsonValue,
       },
     });
 
@@ -235,6 +310,20 @@ export class OrdersService {
 
     const actor = await this.auth.verifyAnyActiveEmployeePasscode(dto.employeePasscode);
     const oldMethod = order.paymentMethod;
+    const oldDetail = order.paymentMethodDetail;
+
+    await this.assertPaymentMethodInCatalog(dto.paymentMethod);
+
+    if (dto.paymentMethod !== 'OTHER' && dto.paymentMethodDetail != null && dto.paymentMethodDetail.trim() !== '') {
+      throw new BadRequestException('paymentMethodDetail may only be set when paymentMethod is OTHER');
+    }
+
+    const newDetail =
+      dto.paymentMethod === 'OTHER'
+        ? dto.paymentMethodDetail !== undefined
+          ? dto.paymentMethodDetail.trim() || null
+          : oldDetail
+        : null;
 
     await this.prisma.orderAuditEvent.create({
       data: {
@@ -244,6 +333,9 @@ export class OrdersService {
         payload: {
           oldPaymentMethod: oldMethod,
           newPaymentMethod: dto.paymentMethod,
+          oldPaymentMethodDetail: oldDetail,
+          newPaymentMethodDetail: newDetail,
+          actorName: actor.name,
         } as Prisma.InputJsonValue,
       },
     });
@@ -257,6 +349,7 @@ export class OrdersService {
       where: { id },
       data: {
         paymentMethod: dto.paymentMethod,
+        paymentMethodDetail: newDetail,
         ...tenderUpdate,
       },
       include: orderInclude,

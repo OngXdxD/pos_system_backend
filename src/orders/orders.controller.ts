@@ -24,8 +24,14 @@ export class OrdersController {
   }
 
   @Get()
-  findAll(@Query('status') status?: string, @Query('employeeId') employeeId?: string) {
-    return this.orders.findAll(status, employeeId);
+  findAll(
+    @Query('status') status?: string,
+    @Query('employeeId') employeeId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.orders.findAll(status, employeeId, from, to, limit);
   }
 
   /** Audit trail for an order (admin / support). */

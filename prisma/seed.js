@@ -47,7 +47,20 @@ async function main() {
     });
   }
 
-  console.log('Seed: SUPER_ADMIN passcode 8888; EMPLOYEE passcode 1234');
+  const defaults = [
+    { code: 'CASH', label: 'Cash', sortOrder: 0 },
+    { code: 'CARD', label: 'Card', sortOrder: 1 },
+    { code: 'OTHER', label: 'Other', sortOrder: 2 },
+  ];
+  for (const row of defaults) {
+    await prisma.paymentMethod.upsert({
+      where: { code: row.code },
+      create: row,
+      update: { label: row.label, sortOrder: row.sortOrder },
+    });
+  }
+
+  console.log('Seed: SUPER_ADMIN passcode 8888; EMPLOYEE passcode 1234; payment methods CASH/CARD/OTHER');
 }
 
 main()
