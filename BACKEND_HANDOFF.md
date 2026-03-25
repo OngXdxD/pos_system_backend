@@ -41,7 +41,7 @@ Non-cash orders: omit `tenderCents` or send `null`.
 
 ## 3. `POST /api/orders` — existing fields (recap)
 
-- `employeeId`, `lines[]`, optional `discountCents` (apply **before** payment in the UI), then `paymentMethod`, and for cash optional `tenderCents`
+- `employeeId`, `lines[]`, `paymentMethod`, optional `discountCents`
 - Validate lines, compute **`totalCents`** server-side (including discount)
 - Return full order with **`orderNumber`** / **`sequence`**, **`status`**, lines, etc.
 

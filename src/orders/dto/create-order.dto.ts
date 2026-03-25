@@ -40,10 +40,9 @@ export class CreateOrderDto {
   @IsString()
   employeeId!: string;
 
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => OrderLineDto)
-  lines!: OrderLineDto[];
+  @IsString()
+  @IsIn([...ORDER_PAYMENT_METHODS])
+  paymentMethod!: (typeof ORDER_PAYMENT_METHODS)[number];
 
   @IsOptional()
   @Transform(({ value }) => (value === undefined || value === null ? 0 : Number(value)))
@@ -51,13 +50,14 @@ export class CreateOrderDto {
   @Min(0)
   discountCents?: number;
 
-  @IsString()
-  @IsIn([...ORDER_PAYMENT_METHODS])
-  paymentMethod!: (typeof ORDER_PAYMENT_METHODS)[number];
-
   @IsOptional()
   @Transform(({ value }) => (value === undefined || value === null ? undefined : Number(value)))
   @IsInt()
   @Min(0)
   tenderCents?: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderLineDto)
+  lines!: OrderLineDto[];
 }
