@@ -120,13 +120,16 @@ model PaymentMethod {
 // --- Company settings (single row) ---
 
 model CompanySetting {
-  id              String   @id @default("default")
-  companyName     String
-  registerNumber  String?
-  contactNumber   String?
-  address         String?
-  email           String?
-  updatedAt       DateTime @updatedAt
+  id                       String   @id @default("default")
+  companyName              String
+  registerNumber           String?
+  contactNumber            String?
+  address                  String?
+  email                    String?
+  thermalPaperWidth         String?
+  defaultPaymentMethodCode  String?
+  thermalPrinterQueueName   String?
+  updatedAt                 DateTime @updatedAt
 
   @@map("company_settings")
 }

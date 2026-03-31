@@ -10,6 +10,7 @@ import { AuthService } from '../auth/auth.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ChangeOrderPaymentDto } from './dto/change-order-payment.dto';
 import { ensureDefaultPaymentMethods } from '../payment-methods/ensure-default-payment-methods';
+import { ThermalPrintService, OrderPrintPayload } from '../printing/thermal-print.service';
 
 const orderInclude = {
   employee: { select: { name: true } },
@@ -90,6 +91,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
+    private readonly thermal: ThermalPrintService,
   ) {}
 
   private async assertPaymentMethodInCatalog(code: string): Promise<void> {
@@ -183,11 +185,47 @@ export class OrdersService {
       include: orderInclude,
     });
 
-    return toDto(order as OrderRow);
+    const body = toDto(order as OrderRow);
+    if (dto.printThermal !== false) {
+      const widthMm = await this.thermal.resolveWidthMm();
+      const pr = await this.thermal.print(body as OrderPrintPayload, 'both', widthMm, true);
+      if (pr.warning) {
+        return { ...body, printWarning: pr.warning };
+      }
+    }
+    return body;
   }
 
-  /** @param limitStr Optional `limit` query (1..5000) to cap rows returned for large datasets. */
-  async findAll(status?: string, employeeId?: string, fromIso?: string, toIso?: string, limitStr?: string) {
+  /**
+   * §9b Option B — requires `Authorization: Bearer` (same pattern as timesheet / employees).
+   */
+  async printThermal(
+    id: string,
+    variant: 'receipt' | 'kitchen' | 'both',
+    authorizationHeader: string | undefined,
+  ) {
+    await this.auth.authenticateBearer(authorizationHeader);
+    const order = await this.findOne(id);
+    const widthMm = await this.thermal.resolveWidthMm();
+    const r = await this.thermal.print(order as OrderPrintPayload, variant, widthMm, false);
+    if (!r.ok) {
+      throw new ConflictException(r.error ?? 'Thermal printer unavailable');
+    }
+    return { ok: true as const };
+  }
+
+  /**
+   * §11: `from`/`to` filter `createdAt`; with `limit`, paginate in SQL and return `{ orders, total }`.
+   * Without `limit`, return a plain array (reports / legacy clients).
+   */
+  async findAll(
+    status?: string,
+    employeeId?: string,
+    fromIso?: string,
+    toIso?: string,
+    limitStr?: string,
+    offsetStr?: string,
+  ) {
     const where: Prisma.OrderWhereInput = {};
     if (status) where.status = status;
     if (employeeId) where.employeeId = employeeId;
@@ -212,8 +250,9 @@ export class OrdersService {
     }
 
     const ORDERS_MAX_LIMIT = 5000;
+    const hasLimit = limitStr !== undefined && limitStr !== '';
     let take: number | undefined;
-    if (limitStr !== undefined && limitStr !== '') {
+    if (hasLimit) {
       const n = parseInt(limitStr, 10);
       if (!Number.isFinite(n) || n < 1) {
         throw new BadRequestException('limit must be a positive integer');
@@ -221,11 +260,40 @@ export class OrdersService {
       take = Math.min(n, ORDERS_MAX_LIMIT);
     }
 
+    let skip = 0;
+    const hasOffset = offsetStr !== undefined && offsetStr !== '';
+    if (hasOffset) {
+      if (!hasLimit) {
+        throw new BadRequestException('offset requires limit');
+      }
+      const off = parseInt(offsetStr, 10);
+      if (!Number.isFinite(off) || off < 0) {
+        throw new BadRequestException('offset must be a non-negative integer');
+      }
+      skip = off;
+    }
+
+    if (hasLimit) {
+      const [total, orders] = await this.prisma.$transaction([
+        this.prisma.order.count({ where }),
+        this.prisma.order.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          include: orderInclude,
+          skip,
+          take: take!,
+        }),
+      ]);
+      return {
+        orders: orders.map((o) => toDto(o as OrderRow)),
+        total,
+      };
+    }
+
     const orders = await this.prisma.order.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: orderInclude,
-      ...(take !== undefined ? { take } : {}),
     });
     return orders.map((o) => toDto(o as OrderRow));
   }

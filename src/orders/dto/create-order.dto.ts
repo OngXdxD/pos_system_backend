@@ -86,6 +86,35 @@ export class CreateOrderDto {
   @IsBoolean()
   autoCompleteNewOrders?: boolean;
 
+  /**
+   * §9b optional body field so `print: false` is not stripped by validation whitelist.
+   * When `false`, slips are not printed (same as `printThermal: false`).
+   */
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined;
+    if (value === true || value === 'true') return true;
+    if (value === false || value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  print?: boolean;
+
+  /**
+   * §9 / §9b: client sends `true` on every order; default `true` if omitted. `false` skips thermal.
+   */
+  @IsOptional()
+  @Transform(({ obj, value }: { obj: Record<string, unknown>; value: unknown }) => {
+    const p = obj.print;
+    if (p === false || p === 'false') return false;
+    if (value === undefined || value === null) return true;
+    if (value === true || value === 'true') return true;
+    if (value === false || value === 'false') return false;
+    return Boolean(value);
+  })
+  @IsBoolean()
+  printThermal?: boolean;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderLineDto)
