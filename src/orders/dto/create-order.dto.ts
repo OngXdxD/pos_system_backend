@@ -49,6 +49,19 @@ export class CreateOrderDto {
   @IsString()
   employeeId!: string;
 
+  /**
+   * §3: optional when replaying offline checkout (e.g. OFF-AB12). Stored and returned as `orderNumber` on responses.
+   */
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === null || value === undefined) return undefined;
+    const t = String(value).trim();
+    return t === '' ? undefined : t;
+  })
+  @IsString()
+  @MaxLength(64)
+  orderNumber?: string;
+
   @IsString()
   @MaxLength(32)
   @Matches(/^[A-Z][A-Z0-9_]*$/, { message: 'paymentMethod must match server catalog code (e.g. CASH)' })
@@ -101,13 +114,14 @@ export class CreateOrderDto {
   print?: boolean;
 
   /**
-   * §9 / §9b: client sends `true` on every order; default `true` if omitted. `false` skips thermal.
+   * §9 / §9b: checkout uses `false` (save fast, then `POST .../print`). Default `false` if omitted.
+   * `true` may still trigger server-side print without blocking the HTTP response.
    */
   @IsOptional()
   @Transform(({ obj, value }: { obj: Record<string, unknown>; value: unknown }) => {
     const p = obj.print;
     if (p === false || p === 'false') return false;
-    if (value === undefined || value === null) return true;
+    if (value === undefined || value === null) return false;
     if (value === true || value === 'true') return true;
     if (value === false || value === 'false') return false;
     return Boolean(value);

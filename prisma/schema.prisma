@@ -139,6 +139,8 @@ model CompanySetting {
 model Order {
   id                    String            @id @default(uuid())
   sequence              Int               @unique @default(autoincrement())
+  /** Client-supplied label for offline replay (e.g. OFF-AB12); when null, API uses C{sequence}. */
+  publicOrderNumber     String?           @map("public_order_number")
   employeeId            String
   employee              Employee          @relation(fields: [employeeId], references: [id])
   subtotalCents         Int               // sum of lines before discount

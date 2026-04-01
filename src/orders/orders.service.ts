@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -31,6 +32,7 @@ type LineRow = {
 type OrderRow = {
   id: string;
   sequence: number;
+  publicOrderNumber: string | null;
   employeeId: string;
   employee?: { name: string } | null;
   subtotalCents: number;
@@ -47,6 +49,12 @@ type OrderRow = {
 
 export function formatOrderNumber(sequence: number): string {
   return `C${String(sequence).padStart(3, '0')}`;
+}
+
+function apiOrderNumber(publicOrderNumber: string | null | undefined, sequence: number): string {
+  const t = publicOrderNumber?.trim();
+  if (t) return t;
+  return formatOrderNumber(sequence);
 }
 
 function mapLines(lines: LineRow[]) {
@@ -66,12 +74,15 @@ function mapLines(lines: LineRow[]) {
 
 function toDto(o: OrderRow) {
   const lines = mapLines(o.lines);
+  const cashier = o.employee?.name ?? null;
   return {
     id: o.id,
     sequence: o.sequence,
-    orderNumber: formatOrderNumber(o.sequence),
+    orderNumber: apiOrderNumber(o.publicOrderNumber, o.sequence),
     employeeId: o.employeeId,
-    employeeName: o.employee?.name ?? null,
+    employeeName: cashier,
+    employee_name: cashier,
+    cashierName: cashier,
     subtotalCents: o.subtotalCents,
     discountCents: o.discountCents,
     totalCents: o.totalCents,
@@ -88,6 +99,8 @@ function toDto(o: OrderRow) {
 
 @Injectable()
 export class OrdersService {
+  private readonly log = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
@@ -158,6 +171,7 @@ export class OrdersService {
     const order = await this.prisma.order.create({
       data: {
         employeeId: dto.employeeId,
+        publicOrderNumber: dto.orderNumber ?? null,
         subtotalCents,
         discountCents,
         totalCents,
@@ -186,14 +200,25 @@ export class OrdersService {
     });
 
     const body = toDto(order as OrderRow);
-    if (dto.printThermal !== false) {
-      const widthMm = await this.thermal.resolveWidthMm();
-      const pr = await this.thermal.print(body as OrderPrintPayload, 'both', widthMm, true);
-      if (pr.warning) {
-        return { ...body, printWarning: pr.warning };
-      }
+    // §9b: create responds after persist; optional inline print must not block the HTTP response.
+    if (dto.printThermal === true) {
+      void this.printAfterCreateNonBlocking(body as OrderPrintPayload);
     }
     return body;
+  }
+
+  /** Fire-and-forget thermal after create when client explicitly sends printThermal: true. */
+  private async printAfterCreateNonBlocking(body: OrderPrintPayload): Promise<void> {
+    try {
+      const widthMm = await this.thermal.resolveWidthMm();
+      const pr = await this.thermal.print(body, 'both', widthMm, true);
+      if (pr.warning) {
+        this.log.warn(`Thermal print after create (${body.id}): ${pr.warning}`);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.log.warn(`Thermal print after create failed (${body.id}): ${msg}`);
+    }
   }
 
   /**
@@ -284,9 +309,12 @@ export class OrdersService {
           take: take!,
         }),
       ]);
+      const mapped = orders.map((o) => toDto(o as OrderRow));
       return {
-        orders: orders.map((o) => toDto(o as OrderRow)),
+        orders: mapped,
         total,
+        totalCount: total,
+        total_count: total,
       };
     }
 
